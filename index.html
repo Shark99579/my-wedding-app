@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>我們的婚禮日誌</title>
+  
+  <!-- 引入 Tailwind CSS (負責畫面美觀) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 引入 Google Material Icons (負責圖示) -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+  
+  <!-- 引入 React (負責核心邏輯) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  
+  <!-- 引入 Babel (負責讓瀏覽器看得懂 React 語法) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- 💡 更新：使用更穩定的 Firebase 傳統相容版 (Compat) 載入方式 -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* 隱藏時間輸入框的預設小圖示，避免裁切 */
+    input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+  </style>
+</head>
+<body class="bg-stone-50">
+  <!-- APP 顯示在這裡 -->
+  <div id="root"></div>
+
+  <!-- 程式碼開始：不需要再加 data-type="module" -->
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // --- 小元件區 ---
+    // 共用輸入框
+    const EditInput = ({ value, onChange, className, type = "text", placeholder = "點擊編輯" }) => (
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`bg-transparent outline-none border-b border-transparent hover:border-stone-200 focus:border-rose-300 transition-colors w-full ${className}`}
+      />
+    );
+
+    // 圖示轉換元件
+    const Icon = ({ name, className }) => (
+      <span className={`material-icons-round ${className}`}>{name}</span>
+    );
+
+    // --- 主要 APP 程式 ---
+    function App() {
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [user, setUser] = useState(null);
+      const [isReady, setIsReady] = useState(false);
+      const [configError, setConfigError] = useState(false);
+      const [authError, setAuthError] = useState(null);
+      
+      const [avatarText, _setAvatarText] = useState('M&K'); // 新增這行：大頭貼文字狀態
+      const [weddingDate, _setWeddingDate] = useState('2026-10-10');
+      const [totalBudget, _setTotalBudget] = useState(500000);
+      
+      const [tasks, _setTasks] = useState([
+        { id: 1, text: '場地', done: false, status: '場勘中', category: '宴客', note: '' },
+        { id: 2, text: '餐費', done: false, status: '', category: '宴客', note: '' },
+        { id: 14, text: '戒指', done: true, status: '訂好了', category: '服飾', note: '三套造型' },
+      ]);
+      
+      const [expenses, _setExpenses] = useState([
+        { id: 1, name: '拍婚紗', amount: 42800 },
+        { id: 2, name: '戒指', amount: 42000 },
+      ]);
+
+      const [schedule, _setSchedule] = useState([
+        { id: 1, time: '08:00', event: '新娘開始化妝', location: '飯店房間' },
+        { id: 2, time: '12:00', event: '迎賓入席', location: '一樓宴會廳' },
+      ]);
+
+      const [venueInfo, _setVenueInfo] = useState({
+        name: '幸福大飯店',
+        hall: '一樓 浪漫花園廳',
+        address: '台北市信義區幸福路 99 號',
+        contactRole: '訂席負責人',
+        contactName: '陳經理',
+        contactPhone: '02-2345-6789',
+        vendors: [{ id: 1, role: '新娘秘書', name: 'Alice', phone: '0912-345-678' }]
+      });
+
+      // 🌟 Firebase 連線邏輯 (使用 Compat API) 🌟
+      useEffect(() => {
+        try {
+          const firebaseConfig = {
+            apiKey: "AIzaSyCh-XpAPbucYna2FLM7rvc5N6XCP3ZEWjk",
+            authDomain: "my-wedding-app-414ee.firebaseapp.com",
+            projectId: "my-wedding-app-414ee",
+            storageBucket: "my-wedding-app-414ee.firebasestorage.app",
+            messagingSenderId: "1046152896943",
+            appId: "1:1046152896943:web:fa202b85658782fc30cf5a"
+          };
+
+          if (!firebaseConfig || !firebaseConfig.apiKey) {
+            setConfigError(true);
+            return;
+          }
+          
+          // 初始化 Firebase
+          if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+          }
+          
+          // 匿名登入
+          firebase.auth().signInAnonymously().catch((error) => {
+            console.error("Firebase 登入失敗:", error);
+            if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
+              setAuthError('not-enabled');
+            } else {
+              setAuthError(error.message);
+            }
+          });
+          
+          // 監聽登入狀態
+          const unsubscribe = firebase.auth().onAuthStateChanged(setUser);
+          return () => unsubscribe();
+        } catch (error) {
+          console.error("Firebase 錯誤:", error);
+          setConfigError(true);
+        }
+      }, []);
+
+      // 監聽雲端資料
+      useEffect(() => {
+        if (!user) return;
+        
+        const db = firebase.firestore();
+        const docRef = db.collection('wedding').doc('shared_state');
+
+        const unsubscribe = docRef.onSnapshot((docSnap) => {
+          if (docSnap.exists) {
+            const data = docSnap.data();
+            if (data.avatarText !== undefined) _setAvatarText(data.avatarText); // 新增這行：同步大頭貼
+            if (data.weddingDate !== undefined) _setWeddingDate(data.weddingDate);
+            if (data.totalBudget !== undefined) _setTotalBudget(data.totalBudget);
+            if (data.tasks) _setTasks(data.tasks);
+            if (data.expenses) _setExpenses(data.expenses);
+            if (data.schedule) _setSchedule(data.schedule);
+            if (data.venueInfo) _setVenueInfo(data.venueInfo);
+          }
+          setIsReady(true);
+        }, (error) => {
+          console.error("雲端同步錯誤:", error);
+          setIsReady(true);
+        });
+        
+        return () => unsubscribe();
+      }, [user]);
+
+      // 儲存到雲端
+      const updateCloud = async (key, value) => {
+        if (!user) return;
+        const db = firebase.firestore();
+        const docRef = db.collection('wedding').doc('shared_state');
+        try {
+          await docRef.set({ [key]: value }, { merge: true });
+        } catch (e) {
+          console.error("寫入雲端失敗:", e);
+        }
+      };
+
+      // --- 狀態更新 ---
+      const setAvatarText = (val) => { _setAvatarText(val); updateCloud('avatarText', val); }; // 新增這行：更新大頭貼
+      const setWeddingDate = (val) => { _setWeddingDate(val); updateCloud('weddingDate', val); };
+      const setTotalBudget = (val) => { _setTotalBudget(val); updateCloud('totalBudget', val); };
+      const setTasks = (val) => { _setTasks(val); updateCloud('tasks', val); };
+      const setExpenses = (val) => { _setExpenses(val); updateCloud('expenses', val); };
+      const setSchedule = (val) => { _setSchedule(val); updateCloud('schedule', val); };
+      const setVenueInfo = (val) => {
+        if (typeof val === 'function') {
+          _setVenueInfo(prev => { const newVal = val(prev); updateCloud('venueInfo', newVal); return newVal; });
+        } else {
+          _setVenueInfo(val); updateCloud('venueInfo', val);
+        }
+      };
+
+      // --- 計算邏輯 ---
+      const targetDate = new Date(weddingDate);
+      const daysLeft = isNaN(targetDate) ? 0 : Math.ceil((targetDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      const completedTasks = tasks.filter(t => t.done).length;
+      const taskProgress = tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100);
+      const totalSpent = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+      // --- 操作函數 ---
+      const toggleTask = (id) => setTasks(tasks.map(t => t.id === id ? { ...t, done: !t.done } : t));
+      const updateTask = (id, field, value) => setTasks(tasks.map(t => t.id === id ? { ...t, [field]: value } : t));
+      const addTask = () => setTasks([...tasks, { id: Date.now(), text: '', done: false, status: '', category: '新分類', note: '' }]);
+      const removeTask = (id) => setTasks(tasks.filter(t => t.id !== id));
+
+      const updateExpense = (id, field, value) => setExpenses(expenses.map(e => e.id === id ? { ...e, [field]: value } : e));
+      const addExpense = () => setExpenses([...expenses, { id: Date.now(), name: '', amount: '' }]);
+      const removeExpense = (id) => setExpenses(expenses.filter(e => e.id !== id));
+
+      const updateSchedule = (id, field, value) => setSchedule(schedule.map(s => s.id === id ? { ...s, [field]: value } : s));
+      const addSchedule = () => setSchedule([...schedule, { id: Date.now(), time: '12:00', event: '', location: '' }]);
+      const removeSchedule = (id) => setSchedule(schedule.filter(s => s.id !== id));
+
+      const updateVendor = (id, field, value) => setVenueInfo(prev => ({ ...prev, vendors: prev.vendors.map(v => v.id === id ? { ...v, [field]: value } : v) }));
+      const addVendor = () => setVenueInfo(prev => ({ ...prev, vendors: [...prev.vendors, { id: Date.now(), role: '', name: '', phone: '' }] }));
+      const removeVendor = (id) => setVenueInfo(prev => ({ ...prev, vendors: prev.vendors.filter(v => v.id !== id) }));
+
+      // --- 錯誤與載入畫面 ---
+      if (configError) {
+        return (
+          <div className="flex flex-col h-screen bg-stone-50 items-center justify-center max-w-md mx-auto shadow-2xl p-6 text-center">
+            <h2 className="text-xl font-bold text-rose-600 mb-2">哎呀！還差一步！</h2>
+            <p className="text-stone-600">請記得在 index.html 貼上你的 Firebase 設定碼。</p>
+          </div>
+        );
+      }
+
+      if (authError === 'not-enabled') {
+        return (
+          <div className="flex flex-col h-screen bg-stone-50 items-center justify-center max-w-md mx-auto shadow-2xl p-6 text-center">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-rose-200 text-left">
+              <h2 className="text-xl font-bold text-rose-600 mb-3 text-center">還差一個小設定 ⚙️</h2>
+              <p className="text-stone-600 text-sm mb-4">你的資料庫連線成功了！但請去 Firebase 開啟權限：</p>
+              <div className="bg-stone-50 p-4 rounded-lg text-sm space-y-3 font-medium">
+                <p>1. 左側選單 <span className="bg-white px-1 py-0.5 rounded">Authentication</span></p>
+                <p>2. 頂部 <span className="bg-white px-1 py-0.5 rounded">Sign-in method</span></p>
+                <p>3. 找到 <span className="text-rose-500 font-bold">匿名 (Anonymous)</span> 並啟用</p>
+                <p className="pt-2 text-stone-500">完成後，重新整理這個網頁即可！</p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      if (!isReady) {
+        return (
+          <div className="flex flex-col h-screen bg-stone-50 items-center justify-center max-w-md mx-auto shadow-2xl">
+            <Icon name="sync" className="text-rose-500 text-4xl animate-spin mb-4" />
+            <p className="text-stone-500">正在準備你的專屬婚禮日誌...</p>
+          </div>
+        );
+      }
+
+      // --- 主畫面渲染 ---
+      return (
+        <div className="flex flex-col h-screen bg-stone-50 text-stone-800 font-sans max-w-md mx-auto shadow-2xl relative overflow-hidden">
+          <header className="bg-white pt-10 pb-4 px-6 flex justify-between items-center z-10 shadow-sm relative">
+            <div>
+              <h1 className="text-2xl font-extrabold text-stone-800 tracking-tight">Our Wedding</h1>
+              <p className="text-rose-500 text-xs font-medium tracking-widest mt-1 uppercase">Planning Journal</p>
+            </div>
+            <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center border border-rose-200 overflow-hidden flex-shrink-0" title="點擊修改名字縮寫">
+              <input 
+                type="text" 
+                maxLength="4"
+                value={avatarText} 
+                onChange={(e) => setAvatarText(e.target.value)} 
+                className="bg-transparent text-rose-600 font-bold text-sm text-center w-full h-full focus:outline-none placeholder-rose-300"
+                placeholder="縮寫"
+              />
+            </div>
+          </header>
+
+          <main className="flex-1 p-6 overflow-y-auto pb-28">
+            {/* 總覽頁面 */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                <div className="bg-gradient-to-br from-rose-400 to-rose-500 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden text-center flex flex-col items-center">
+                  <Icon name="favorite" className="absolute -right-4 -top-4 text-9xl opacity-10" />
+                  <h2 className="text-rose-100 text-sm font-medium tracking-widest mb-2 relative z-10">距離我們的大日子還有</h2>
+                  <div className="flex items-baseline justify-center space-x-2 relative z-10">
+                    <span className="text-6xl font-bold">{daysLeft > 0 ? daysLeft : 0}</span>
+                    <span className="text-xl">天</span>
+                  </div>
+                  <input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} className="mt-4 bg-white/20 text-white border border-rose-300/50 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-white/50 relative z-10" />
+                </div>
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-100">
+                  <h3 className="font-bold text-stone-800 mb-4 flex items-center">
+                    <Icon name="check_box" className="mr-2 text-rose-500" /> 籌備進度
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm text-stone-600">
+                      <span>已完成 {completedTasks} / {tasks.length} 項</span>
+                      <span className="font-bold text-rose-500">{taskProgress}%</span>
+                    </div>
+                    <div className="w-full bg-stone-100 rounded-full h-2.5"><div className="bg-rose-400 h-2.5 rounded-full" style={{ width: `${taskProgress}%` }}></div></div>
+                  </div>
+                </div>
+                <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-100">
+                  <h3 className="font-bold text-stone-800 mb-4 flex items-center">
+                    <Icon name="attach_money" className="mr-2 text-rose-500" /> 預算概況
+                  </h3>
+                  <div className="flex justify-between items-end mb-4">
+                    <div>
+                      <p className="text-xs text-stone-500 mb-1">已花費</p>
+                      <p className="text-2xl font-bold text-stone-800">${totalSpent.toLocaleString()}</p>
+                    </div>
+                    <div className="text-right flex flex-col items-end">
+                      <p className="text-xs text-stone-500 mb-1">設定總預算</p>
+                      <div className="flex items-center text-stone-600 font-medium">$ <input type="number" value={totalBudget} onChange={(e) => setTotalBudget(Number(e.target.value))} className="w-20 text-right bg-stone-50 border border-stone-200 rounded px-1 ml-1" /></div>
+                    </div>
+                  </div>
+                  <div className="w-full bg-stone-100 rounded-full h-2"><div className="bg-stone-800 h-2 rounded-full" style={{ width: `${Math.min((totalSpent / totalBudget) * 100, 100)}%` }}></div></div>
+                </div>
+              </div>
+            )}
+
+            {/* 待辦頁面 */}
+            {activeTab === 'tasks' && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-xl font-bold text-stone-800">待辦事項</h2>
+                  <button onClick={addTask} className="text-rose-500 bg-rose-50 p-2 rounded-full"><Icon name="add" /></button>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
+                  {tasks.map((task, index) => (
+                    <div key={task.id} className={`flex items-start p-4 ${index !== tasks.length - 1 ? 'border-b border-stone-50' : ''}`}>
+                      <button onClick={() => toggleTask(task.id)} className="mt-1">
+                        <Icon name={task.done ? "check_circle" : "radio_button_unchecked"} className={task.done ? "text-rose-500" : "text-stone-300"} />
+                      </button>
+                      <div className={`ml-3 flex-1 ${task.done ? 'opacity-50' : ''}`}>
+                        <div className="flex justify-between items-start gap-2">
+                          <EditInput value={task.text} onChange={(v) => updateTask(task.id, 'text', v)} className={`font-medium ${task.done ? 'line-through text-stone-500' : 'text-stone-800'}`} placeholder="事項名稱..." />
+                          <input value={task.status} onChange={e => updateTask(task.id, 'status', e.target.value)} className={`text-[10px] px-2 py-0.5 rounded-full outline-none w-24 text-center ${task.status ? (task.done ? 'bg-rose-50 text-rose-600' : 'bg-stone-100 text-stone-600') : 'text-stone-400 border border-dashed border-stone-300'}`} placeholder="+ 標籤" />
+                          <button onClick={() => removeTask(task.id)} className="text-stone-300 hover:text-rose-500 p-1"><Icon name="delete" className="text-lg" /></button>
+                        </div>
+                        <div className="flex items-center text-xs text-stone-400 mt-1 space-x-1">
+                          <EditInput value={task.category} onChange={(v) => updateTask(task.id, 'category', v)} className="w-16" placeholder="分類" />
+                          <span>•</span>
+                          <EditInput value={task.note} onChange={(v) => updateTask(task.id, 'note', v)} className="flex-1" placeholder="備註..." />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 預算頁面 */}
+            {activeTab === 'budget' && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-xl font-bold text-stone-800">花費明細</h2>
+                  <button onClick={addExpense} className="text-rose-500 bg-rose-50 p-2 rounded-full"><Icon name="add" /></button>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
+                  {expenses.map((expense, index) => (
+                    <div key={expense.id} className={`flex items-center justify-between p-4 ${index !== expenses.length - 1 ? 'border-b border-stone-50' : ''}`}>
+                      <div className="flex items-center space-x-3 flex-1">
+                        <div className="w-10 h-10 rounded-full bg-stone-50 border border-stone-100 flex items-center justify-center text-stone-400"><Icon name="redeem" /></div>
+                        <EditInput value={expense.name} onChange={(v) => updateExpense(expense.id, 'name', v)} className="font-medium text-stone-800 text-base" placeholder="項目名稱" />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-stone-400 font-bold">$</span>
+                        <input type="number" value={expense.amount} onChange={(e) => updateExpense(expense.id, 'amount', e.target.value)} className="w-24 text-right font-bold text-stone-700 bg-transparent outline-none" placeholder="金額" />
+                        <button onClick={() => removeExpense(expense.id)} className="text-stone-300 hover:text-rose-500 p-1"><Icon name="delete" className="text-lg" /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 流程頁面 */}
+            {activeTab === 'schedule' && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-stone-800">當日流程</h2>
+                  <button onClick={addSchedule} className="text-rose-500 bg-rose-50 p-2 rounded-full"><Icon name="add" /></button>
+                </div>
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 relative">
+                  <div className="absolute left-[103px] top-2 bottom-2 w-0.5 bg-rose-100 z-0"></div>
+                  <div className="space-y-8 relative">
+                    {schedule.map((item) => (
+                      <div key={item.id} className="flex items-start group relative z-10">
+                        <div className="w-24 flex-shrink-0 text-right pr-4 pt-1.5 bg-white relative z-10">
+                          <input type="time" value={item.time} onChange={(e) => updateSchedule(item.id, 'time', e.target.value)} className="font-bold text-stone-600 text-sm bg-transparent w-full text-right outline-none" />
+                        </div>
+                        <div className="relative flex-1 bg-stone-50 rounded-xl p-3 border border-stone-100 ml-4">
+                          <div className="absolute -left-[8px] top-3.5 w-3 h-3 bg-rose-400 rounded-full border-2 border-white shadow-sm transform -translate-x-1/2 z-20"></div>
+                          <div className="flex justify-between items-start">
+                            <EditInput value={item.event} onChange={(v) => updateSchedule(item.id, 'event', v)} className="font-bold text-stone-800" placeholder="流程名稱" />
+                            <button onClick={() => removeSchedule(item.id)} className="text-stone-300 hover:text-rose-500 ml-2"><Icon name="delete" className="text-lg" /></button>
+                          </div>
+                          <div className="flex items-center mt-1 text-sm text-stone-500">
+                            <Icon name="location_on" className="text-base mr-1" />
+                            <EditInput value={item.location} onChange={(v) => updateSchedule(item.id, 'location', v)} placeholder="地點" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 場地頁面 */}
+            {activeTab === 'venue' && (
+              <div className="space-y-6">
+                <h2 className="text-xl font-bold text-stone-800">場地與廠商資訊</h2>
+                <div className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
+                  <div className="h-32 bg-stone-200 relative">
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60"></div>
+                    <div className="absolute bottom-4 left-4 right-4 text-white">
+                      <EditInput value={venueInfo.name} onChange={(v) => setVenueInfo({...venueInfo, name: v})} className="font-bold text-xl text-white placeholder-white/70" placeholder="場地名稱" />
+                      <EditInput value={venueInfo.hall} onChange={(v) => setVenueInfo({...venueInfo, hall: v})} className="text-sm opacity-90 mt-1 text-white placeholder-white/70" placeholder="廳房名稱" />
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    <div className="flex items-start space-x-3">
+                      <Icon name="location_on" className="text-rose-500 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-bold text-stone-800">地址</p>
+                        <EditInput value={venueInfo.address} onChange={(v) => setVenueInfo({...venueInfo, address: v})} className="text-sm text-stone-500" placeholder="輸入地址" />
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <Icon name="event" className="text-rose-500 mt-0.5" />
+                      <div className="flex-1 flex gap-2">
+                        <div className="w-1/3"><p className="text-sm font-bold text-stone-800">職稱</p><EditInput value={venueInfo.contactRole} onChange={(v) => setVenueInfo({...venueInfo, contactRole: v})} className="text-sm text-stone-500" /></div>
+                        <div className="w-1/3"><p className="text-sm font-bold text-stone-800">聯絡人</p><EditInput value={venueInfo.contactName} onChange={(v) => setVenueInfo({...venueInfo, contactName: v})} className="text-sm text-stone-500" /></div>
+                        <div className="w-1/3"><p className="text-sm font-bold text-stone-800">電話</p><EditInput value={venueInfo.contactPhone} onChange={(v) => setVenueInfo({...venueInfo, contactPhone: v})} className="text-sm text-stone-500" /></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+
+          <nav className="absolute bottom-0 w-full bg-white/90 backdrop-blur-md border-t border-stone-100 flex justify-around p-2 pb-safe shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] z-10">
+            {[
+              { id: 'dashboard', icon: 'favorite', label: '總覽' },
+              { id: 'tasks', icon: 'check_box', label: '待辦' },
+              { id: 'budget', icon: 'attach_money', label: '預算' },
+              { id: 'schedule', icon: 'schedule', label: '流程' },
+              { id: 'venue', icon: 'location_on', label: '場地' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex flex-col items-center p-2 rounded-xl transition-all duration-300 w-16 ${activeTab === tab.id ? 'text-rose-600 -translate-y-1' : 'text-stone-400'}`}
+              >
+                <div className={`relative p-1.5 rounded-full ${activeTab === tab.id ? 'bg-rose-50' : ''}`}>
+                  <Icon name={tab.icon} />
+                </div>
+                <span className={`text-[10px] mt-0.5 font-medium`}>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
