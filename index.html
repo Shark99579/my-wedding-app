@@ -115,6 +115,12 @@
         vendors: [{ id: 1, role: '新娘秘書', name: 'Alice', phone: '0912-345-678' }]
       });
 
+      // 新增：賓客名單狀態
+      const [guests, _setGuests] = useState([
+        { id: 1, name: '王大明 一家', count: 3, status: '已確認', table: '男方親友桌', side: '男方' },
+        { id: 2, name: '林小美', count: 1, status: '未確認', table: '女方同學桌', side: '女方' },
+      ]);
+
       // 🌟 Firebase 連線邏輯 🌟
       useEffect(() => {
         try {
@@ -158,6 +164,7 @@
             if (data.expenses) _setExpenses(data.expenses);
             if (data.schedule) _setSchedule(data.schedule);
             if (data.venueInfo) _setVenueInfo(data.venueInfo);
+            if (data.guests) _setGuests(data.guests); // 接收雲端的賓客資料
           }
           setIsReady(true);
         }, (error) => {
@@ -192,26 +199,42 @@
         if (typeof val === 'function') { _setVenueInfo(prev => { const newVal = val(prev); updateCloud('venueInfo', newVal); return newVal; }); } 
         else { _setVenueInfo(val); updateCloud('venueInfo', val); }
       };
+      // 更新賓客清單到雲端
+      const setGuests = (val) => { _setGuests(val); updateCloud('guests', val); };
 
+      // --- 計算邏輯 ---
       const targetDate = new Date(weddingDate);
       const daysLeft = isNaN(targetDate) ? 0 : Math.ceil((targetDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
       const completedTasks = tasks.filter(t => t.done).length;
       const taskProgress = tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100);
       const totalSpent = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      
+      // 計算賓客總數與已確認人數
+      const totalGuests = guests.reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+      const confirmedGuests = guests.filter(g => g.status === '已確認' || g.status === '出席').reduce((sum, item) => sum + (Number(item.count) || 0), 0);
 
+      // --- 操作函數 ---
       const toggleTask = (id) => setTasks(tasks.map(t => t.id === id ? { ...t, done: !t.done } : t));
       const updateTask = (id, field, value) => setTasks(tasks.map(t => t.id === id ? { ...t, [field]: value } : t));
       const addTask = () => setTasks([...tasks, { id: Date.now(), text: '', done: false, status: '', category: '新分類', note: '' }]);
       const removeTask = (id) => setTasks(tasks.filter(t => t.id !== id));
+      
       const updateExpense = (id, field, value) => setExpenses(expenses.map(e => e.id === id ? { ...e, [field]: value } : e));
       const addExpense = () => setExpenses([...expenses, { id: Date.now(), name: '', amount: '' }]);
       const removeExpense = (id) => setExpenses(expenses.filter(e => e.id !== id));
+      
       const updateSchedule = (id, field, value) => setSchedule(schedule.map(s => s.id === id ? { ...s, [field]: value } : s));
       const addSchedule = () => setSchedule([...schedule, { id: Date.now(), time: '12:00', event: '', location: '' }]);
       const removeSchedule = (id) => setSchedule(schedule.filter(s => s.id !== id));
+      
       const updateVendor = (id, field, value) => setVenueInfo(prev => ({ ...prev, vendors: prev.vendors.map(v => v.id === id ? { ...v, [field]: value } : v) }));
       const addVendor = () => setVenueInfo(prev => ({ ...prev, vendors: [...prev.vendors, { id: Date.now(), role: '', name: '', phone: '' }] }));
       const removeVendor = (id) => setVenueInfo(prev => ({ ...prev, vendors: prev.vendors.filter(v => v.id !== id) }));
+
+      // 賓客操作函數
+      const updateGuest = (id, field, value) => setGuests(guests.map(g => g.id === id ? { ...g, [field]: value } : g));
+      const addGuest = () => setGuests([{ id: Date.now(), name: '', count: 1, status: '未確認', table: '未安排', side: '共同' }, ...guests]);
+      const removeGuest = (id) => setGuests(guests.filter(g => g.id !== id));
 
       if (configError || authError === 'not-enabled') {
         return (
@@ -244,13 +267,13 @@
               </h1>
               <p className="text-purple-400 text-xs font-black tracking-widest mt-1 uppercase">Happy Planning ✨</p>
             </div>
-            <div className="w-12 h-12 bg-gradient-to-tr from-pink-300 to-purple-300 rounded-full flex items-center justify-center border-4 border-white shadow-md overflow-hidden flex-shrink-0 transform rotate-3 hover:rotate-0 transition-transform">
+            <div className="w-36 h-12 px-2 bg-gradient-to-tr from-pink-300 to-purple-300 rounded-full flex items-center justify-center border-4 border-white shadow-md overflow-hidden flex-shrink-0 transform rotate-3 hover:rotate-0 transition-transform">
               <EditInput 
-                maxLength="4"
+                maxLength="15"
                 value={avatarText} 
                 onChange={setAvatarText} 
                 className="bg-transparent text-white font-black text-sm text-center w-full h-full focus:outline-none focus:bg-transparent placeholder-white/70"
-                placeholder="縮寫"
+                placeholder="輸入名字"
               />
             </div>
           </header>
@@ -440,25 +463,84 @@
                 </div>
               </div>
             )}
+
+            {/* 賓客頁面 */}
+            {activeTab === 'guests' && (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex justify-between items-center bg-white p-4 rounded-3xl border-4 border-rose-100 shadow-[0_4px_0_0_rgba(255,228,230,1)]">
+                  <h2 className="text-xl font-black text-slate-700 flex items-center"><span className="text-2xl mr-2">💌</span> 賓客與座位</h2>
+                  <button onClick={addGuest} className="bg-rose-400 text-white p-2 rounded-xl shadow-md hover:bg-rose-500 transform hover:scale-105 transition-all"><Icon name="add" /></button>
+                </div>
+                
+                {/* 人數統計卡片 */}
+                <div className="bg-white p-4 rounded-3xl border-4 border-slate-100 shadow-[0_6px_0_0_rgba(241,245,249,1)] flex justify-between items-center">
+                  <div className="text-center flex-1 border-r-2 border-dashed border-slate-100">
+                    <p className="text-xs font-bold text-slate-400 mb-1">預計總人數</p>
+                    <p className="text-3xl font-black text-slate-700">{totalGuests} <span className="text-sm font-bold text-slate-400">人</span></p>
+                  </div>
+                  <div className="text-center flex-1">
+                    <p className="text-xs font-bold text-slate-400 mb-1">已確認出席</p>
+                    <p className="text-3xl font-black text-rose-500">{confirmedGuests} <span className="text-sm font-bold text-rose-300">人</span></p>
+                  </div>
+                </div>
+
+                {/* 賓客名單 */}
+                <div className="space-y-3">
+                  {guests.map((guest) => (
+                    <div key={guest.id} className="bg-white rounded-2xl p-4 border-2 border-slate-100 shadow-[0_4px_0_0_rgba(241,245,249,1)] transform transition-transform hover:-translate-y-1">
+                      
+                      <div className="flex justify-between items-start gap-2 mb-3 pb-2 border-b-2 border-dashed border-slate-100">
+                        <EditInput value={guest.name} onChange={(v) => updateGuest(guest.id, 'name', v)} className="font-black text-lg text-slate-700 flex-1" placeholder="填寫賓客或群組名稱" />
+                        <button onClick={() => removeGuest(guest.id)} className="text-slate-300 hover:text-red-400 p-1"><Icon name="delete" className="text-base" /></button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div className="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-100">
+                          <span className="text-sm mr-2 opacity-70">👥</span>
+                          <EditInput type="number" value={guest.count} onChange={(v) => updateGuest(guest.id, 'count', v)} className="font-black text-rose-500 w-full" placeholder="人數" />
+                        </div>
+                        <div className="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-100">
+                          <span className="text-sm mr-2 opacity-70">🏷️</span>
+                          <EditInput value={guest.side} onChange={(v) => updateGuest(guest.id, 'side', v)} className="font-bold text-slate-600 w-full text-sm" placeholder="男方/女方" />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-100">
+                          <span className="text-sm mr-2 opacity-70">🪑</span>
+                          <EditInput value={guest.table} onChange={(v) => updateGuest(guest.id, 'table', v)} className="font-bold text-slate-600 w-full text-sm" placeholder="安排桌次" />
+                        </div>
+                        <div className="flex items-center px-2 py-1.5 rounded-xl border border-slate-100 transition-colors" style={{ backgroundColor: guest.status === '已確認' || guest.status === '出席' ? '#fdf2f8' : '#f8fafc' }}>
+                          <span className="text-sm mr-2 opacity-70">{guest.status === '已確認' || guest.status === '出席' ? '✅' : '❓'}</span>
+                          <EditInput value={guest.status} onChange={(v) => updateGuest(guest.id, 'status', v)} className={`font-bold w-full text-sm ${guest.status === '已確認' || guest.status === '出席' ? 'text-rose-500' : 'text-slate-600'}`} placeholder="出席狀態 (填'已確認')" />
+                        </div>
+                      </div>
+
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </main>
 
           {/* 懸浮 Q 版導覽列 */}
-          <div className="fixed bottom-6 left-0 w-full px-6 z-20 pointer-events-none">
-            <nav className="bg-white/90 backdrop-blur-md border-4 border-pink-100 flex justify-around p-2 shadow-[0_8px_20px_-5px_rgba(244,114,182,0.3)] rounded-3xl pointer-events-auto mx-auto max-w-sm">
+          <div className="fixed bottom-6 left-0 w-full px-4 z-20 pointer-events-none">
+            <nav className="bg-white/90 backdrop-blur-md border-4 border-pink-100 flex justify-between p-2 shadow-[0_8px_20px_-5px_rgba(244,114,182,0.3)] rounded-3xl pointer-events-auto mx-auto max-w-sm">
               {[
                 { id: 'dashboard', emoji: '🏠', label: '首頁' },
                 { id: 'tasks', emoji: '📝', label: '待辦' },
                 { id: 'budget', emoji: '🐷', label: '預算' },
+                { id: 'guests', emoji: '💌', label: '賓客' },
                 { id: 'schedule', emoji: '⏰', label: '流程' },
                 { id: 'venue', emoji: '🏰', label: '場地' },
               ].map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all duration-300 w-[4.5rem] ${activeTab === tab.id ? 'bg-pink-100 -translate-y-2 shadow-md border-2 border-pink-200' : 'hover:bg-slate-50 border-2 border-transparent'}`}
+                  className={`flex flex-col items-center justify-center p-1 rounded-2xl transition-all duration-300 flex-1 max-w-[4rem] ${activeTab === tab.id ? 'bg-pink-100 -translate-y-2 shadow-md border-2 border-pink-200' : 'hover:bg-slate-50 border-2 border-transparent'}`}
                 >
-                  <span className={`text-xl mb-0.5 ${activeTab === tab.id ? 'transform scale-110' : 'opacity-70'}`}>{tab.emoji}</span>
-                  <span className={`text-[10px] font-black ${activeTab === tab.id ? 'text-pink-600' : 'text-slate-400'}`}>{tab.label}</span>
+                  <span className={`text-[1.1rem] mb-0.5 ${activeTab === tab.id ? 'transform scale-110' : 'opacity-70'}`}>{tab.emoji}</span>
+                  <span className={`text-[9px] font-black ${activeTab === tab.id ? 'text-pink-600' : 'text-slate-400'}`}>{tab.label}</span>
                 </button>
               ))}
             </nav>
