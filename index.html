@@ -36,17 +36,51 @@
   <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // --- 小元件區 ---
-    // 共用輸入框
-    const EditInput = ({ value, onChange, className, type = "text", placeholder = "點擊編輯" }) => (
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`bg-transparent outline-none border-b border-transparent hover:border-stone-200 focus:border-rose-300 transition-colors w-full ${className}`}
-      />
-    );
+    // --- 🌟 升級版：智慧緩衝輸入框 🌟 ---
+    // 解決打字太快導致的雲端覆蓋問題
+    const EditInput = ({ value, onChange, className, type = "text", placeholder = "點擊編輯", ...props }) => {
+      const [localValue, setLocalValue] = useState(value);
+      const [isFocused, setIsFocused] = useState(false);
+
+      // 當雲端有新資料，且使用者「沒有」在打字時，才更新畫面
+      useEffect(() => {
+        if (!isFocused) {
+          setLocalValue(value);
+        }
+      }, [value, isFocused]);
+
+      const handleFocus = () => {
+        setIsFocused(true);
+      };
+
+      const handleBlur = () => {
+        setIsFocused(false);
+        // 只有在內容真的有改變時，才執行儲存上傳
+        if (localValue !== value) {
+          onChange(localValue);
+        }
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+          e.target.blur(); // 按下 Enter 自動取消聚焦，觸發儲存
+        }
+      };
+
+      return (
+        <input
+          type={type}
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className={`bg-transparent outline-none border-b border-transparent hover:border-stone-200 focus:border-rose-300 transition-colors w-full ${className}`}
+          {...props}
+        />
+      );
+    };
 
     // 圖示轉換元件
     const Icon = ({ name, className }) => (
@@ -61,7 +95,7 @@
       const [configError, setConfigError] = useState(false);
       const [authError, setAuthError] = useState(null);
       
-      const [avatarText, _setAvatarText] = useState('M&K'); // 新增這行：大頭貼文字狀態
+      const [avatarText, _setAvatarText] = useState('M&K');
       const [weddingDate, _setWeddingDate] = useState('2026-10-10');
       const [totalBudget, _setTotalBudget] = useState(500000);
       
@@ -142,7 +176,7 @@
         const unsubscribe = docRef.onSnapshot((docSnap) => {
           if (docSnap.exists) {
             const data = docSnap.data();
-            if (data.avatarText !== undefined) _setAvatarText(data.avatarText); // 新增這行：同步大頭貼
+            if (data.avatarText !== undefined) _setAvatarText(data.avatarText);
             if (data.weddingDate !== undefined) _setWeddingDate(data.weddingDate);
             if (data.totalBudget !== undefined) _setTotalBudget(data.totalBudget);
             if (data.tasks) _setTasks(data.tasks);
@@ -172,7 +206,7 @@
       };
 
       // --- 狀態更新 ---
-      const setAvatarText = (val) => { _setAvatarText(val); updateCloud('avatarText', val); }; // 新增這行：更新大頭貼
+      const setAvatarText = (val) => { _setAvatarText(val); updateCloud('avatarText', val); };
       const setWeddingDate = (val) => { _setWeddingDate(val); updateCloud('weddingDate', val); };
       const setTotalBudget = (val) => { _setTotalBudget(val); updateCloud('totalBudget', val); };
       const setTasks = (val) => { _setTasks(val); updateCloud('tasks', val); };
@@ -256,11 +290,10 @@
               <p className="text-rose-500 text-xs font-medium tracking-widest mt-1 uppercase">Planning Journal</p>
             </div>
             <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center border border-rose-200 overflow-hidden flex-shrink-0" title="點擊修改名字縮寫">
-              <input 
-                type="text" 
+              <EditInput 
                 maxLength="4"
                 value={avatarText} 
-                onChange={(e) => setAvatarText(e.target.value)} 
+                onChange={setAvatarText} 
                 className="bg-transparent text-rose-600 font-bold text-sm text-center w-full h-full focus:outline-none placeholder-rose-300"
                 placeholder="縮寫"
               />
@@ -278,6 +311,7 @@
                     <span className="text-6xl font-bold">{daysLeft > 0 ? daysLeft : 0}</span>
                     <span className="text-xl">天</span>
                   </div>
+                  {/* 日期選擇器 */}
                   <input type="date" value={weddingDate} onChange={(e) => setWeddingDate(e.target.value)} className="mt-4 bg-white/20 text-white border border-rose-300/50 rounded-lg px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-white/50 relative z-10" />
                 </div>
                 <div className="bg-white p-5 rounded-2xl shadow-sm border border-stone-100">
@@ -303,7 +337,9 @@
                     </div>
                     <div className="text-right flex flex-col items-end">
                       <p className="text-xs text-stone-500 mb-1">設定總預算</p>
-                      <div className="flex items-center text-stone-600 font-medium">$ <input type="number" value={totalBudget} onChange={(e) => setTotalBudget(Number(e.target.value))} className="w-20 text-right bg-stone-50 border border-stone-200 rounded px-1 ml-1" /></div>
+                      <div className="flex items-center text-stone-600 font-medium">$ 
+                        <EditInput type="number" value={totalBudget} onChange={(v) => setTotalBudget(Number(v))} className="w-20 text-right bg-stone-50 border border-stone-200 rounded px-1 ml-1" />
+                      </div>
                     </div>
                   </div>
                   <div className="w-full bg-stone-100 rounded-full h-2"><div className="bg-stone-800 h-2 rounded-full" style={{ width: `${Math.min((totalSpent / totalBudget) * 100, 100)}%` }}></div></div>
@@ -327,7 +363,7 @@
                       <div className={`ml-3 flex-1 ${task.done ? 'opacity-50' : ''}`}>
                         <div className="flex justify-between items-start gap-2">
                           <EditInput value={task.text} onChange={(v) => updateTask(task.id, 'text', v)} className={`font-medium ${task.done ? 'line-through text-stone-500' : 'text-stone-800'}`} placeholder="事項名稱..." />
-                          <input value={task.status} onChange={e => updateTask(task.id, 'status', e.target.value)} className={`text-[10px] px-2 py-0.5 rounded-full outline-none w-24 text-center ${task.status ? (task.done ? 'bg-rose-50 text-rose-600' : 'bg-stone-100 text-stone-600') : 'text-stone-400 border border-dashed border-stone-300'}`} placeholder="+ 標籤" />
+                          <EditInput value={task.status} onChange={v => updateTask(task.id, 'status', v)} className={`text-[10px] px-2 py-0.5 rounded-full outline-none w-24 text-center ${task.status ? (task.done ? 'bg-rose-50 text-rose-600' : 'bg-stone-100 text-stone-600') : 'text-stone-400 border border-dashed border-stone-300'}`} placeholder="+ 標籤" />
                           <button onClick={() => removeTask(task.id)} className="text-stone-300 hover:text-rose-500 p-1"><Icon name="delete" className="text-lg" /></button>
                         </div>
                         <div className="flex items-center text-xs text-stone-400 mt-1 space-x-1">
@@ -358,7 +394,7 @@
                       </div>
                       <div className="flex items-center space-x-2">
                         <span className="text-stone-400 font-bold">$</span>
-                        <input type="number" value={expense.amount} onChange={(e) => updateExpense(expense.id, 'amount', e.target.value)} className="w-24 text-right font-bold text-stone-700 bg-transparent outline-none" placeholder="金額" />
+                        <EditInput type="number" value={expense.amount} onChange={(v) => updateExpense(expense.id, 'amount', v)} className="w-24 text-right font-bold text-stone-700 bg-transparent outline-none" placeholder="金額" />
                         <button onClick={() => removeExpense(expense.id)} className="text-stone-300 hover:text-rose-500 p-1"><Icon name="delete" className="text-lg" /></button>
                       </div>
                     </div>
@@ -380,7 +416,7 @@
                     {schedule.map((item) => (
                       <div key={item.id} className="flex items-start group relative z-10">
                         <div className="w-24 flex-shrink-0 text-right pr-4 pt-1.5 bg-white relative z-10">
-                          <input type="time" value={item.time} onChange={(e) => updateSchedule(item.id, 'time', e.target.value)} className="font-bold text-stone-600 text-sm bg-transparent w-full text-right outline-none" />
+                          <EditInput type="time" value={item.time} onChange={(v) => updateSchedule(item.id, 'time', v)} className="font-bold text-stone-600 text-sm bg-transparent w-full text-right outline-none" />
                         </div>
                         <div className="relative flex-1 bg-stone-50 rounded-xl p-3 border border-stone-100 ml-4">
                           <div className="absolute -left-[8px] top-3.5 w-3 h-3 bg-rose-400 rounded-full border-2 border-white shadow-sm transform -translate-x-1/2 z-20"></div>
